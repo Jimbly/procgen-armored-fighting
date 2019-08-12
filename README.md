@@ -8,4 +8,3 @@ Maybe TODO:
 * Heads should be able to be super low, and perhaps bigger (especially when lower)
 * Occasionally generate different shoulders on each side
 * Weapons better center in odd shoulders
-* Animate an army of them walking past

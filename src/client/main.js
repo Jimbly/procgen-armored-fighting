@@ -17,6 +17,7 @@ const sprites = require('./glov/sprites.js');
 const ui = require('./glov/ui.js');
 // const particle_data = require('./particle_data.js');
 const random_seed = require('random-seed');
+const { ridx } = require('../common/util.js');
 const shaders = require('./glov/shaders.js');
 
 const { vec2, vec3, vec4, unit_vec } = require('./glov/vmath.js');
@@ -27,6 +28,8 @@ window.Z = window.Z || {};
 Z.BACKGROUND = 0;
 Z.SPRITES = 10;
 Z.PARTICLES = 20;
+Z.POST = 3100;
+Z.UI = 3000;
 Z.UI_TEST = 200;
 
 const DRAW_NODES = false;
@@ -49,6 +52,12 @@ export function main() {
     pixely: 'off',
     viewport_postprocess: false,
     do_borders: false,
+    ui_sprites: {
+      button: ['ui.local/button', [34, 60, 34], [63]],
+      button_disabled: ['ui.local/button_disabled', [34, 60, 34], [63]],
+      button_down: ['ui.local/button_down', [34, 60, 34], [63]],
+      panel: ['ui.local/panel', [11, 26, 11], [11, 20, 11]],
+    },
   })) {
     return;
   }
@@ -561,6 +570,10 @@ export function main() {
       m2scale(foot_node_right.rel_xform, foot_node_right.rel_xform_base, [1, 1/scale_lower]);
     };
 
+    root.speed = rand.floatBetween(0.5, 1);
+    root.speed = 0.25 + (walk_rate - 0.001) / 0.004 * (0.65 - 0.25);
+    root.ypos = rand.floatBetween(0, 1);
+
     return root;
   }
 
@@ -580,22 +593,31 @@ export function main() {
     });
   }
 
-  function drawNode(parent_xform, node) {
+  function drawNode(parent_xform, node, zoffs) {
     m2mul(node.xform, parent_xform, node.rel_xform);
     if (DRAW_NODES) {
       ui.drawLine(node.xform[4] - 3, node.xform[5] - 3, node.xform[4] + 3, node.xform[5] + 3, 1000, 1, 0.95, unit_vec);
       ui.drawLine(node.xform[4] + 3, node.xform[5] - 3, node.xform[4] - 3, node.xform[5] + 3, 1000, 1, 0.95, unit_vec);
     }
     for (let ii = 0; ii < node.geom.length; ++ii) {
-      drawTriFan(node.xform, node.geom[ii].z, node.geom[ii]);
+      drawTriFan(node.xform, node.geom[ii].z + zoffs, node.geom[ii]);
     }
     for (let ii = 0; ii < node.weps.length; ++ii) {
       let ww = node.weps[ii];
       m2v2transform(ww.pos_temp, ww.pos, node.xform);
-      ui.drawCircle(ww.pos_temp[0], ww.pos_temp[1], ww.pos[2], ww.radius, ww.spread, ww.color);
+      ui.drawCircle(ww.pos_temp[0], ww.pos_temp[1], ww.pos[2] + zoffs, ww.radius, ww.spread, ww.color);
     }
     for (let ii = 0; ii < node.children.length; ++ii) {
-      drawNode(node.xform, node.children[ii]);
+      drawNode(node.xform, node.children[ii], zoffs);
+    }
+  }
+
+  function freeNode(node) {
+    for (let ii = 0; ii < node.geom.length; ++ii) {
+      node.geom[ii].dispose();
+    }
+    for (let ii = 0; ii < node.children.length; ++ii) {
+      freeNode(node.children[ii]);
     }
   }
 
@@ -637,16 +659,59 @@ export function main() {
 
   let ROBO_W = 3;
   let ROBO_H = 3;
-  let robos = [];
+  let robos;
   let mat_base = mat2d();
   let last_light = -Infinity;
   let lightning_countdown = 0;
   let robo_idx = 0;
-  function test(dt) {
-    if (input.click()) {
-      for (let ii = 0; ii < robos.length; ++ii) {
-        robos[ii] = genRobo(robo_idx++);
+  let ambiance = true;
+  let endless = true;
+
+  function initRoboGrid() {
+    robos = [];
+    let idx = 0;
+    for (let ii = 0; ii < ROBO_W; ++ii) {
+      for (let jj = ROBO_H - 1; jj >= 0; --jj) {
+        let r = genRobo(robo_idx++);
+        r.xpos = (idx++) / (ROBO_W * ROBO_H - 1);
+        if (endless) {
+          // keep r.ypos
+        } else {
+          r.ypos = (jj + 1) / ROBO_H;
+        }
+
+        robos.push(r);
       }
+    }
+  }
+
+  function test(dt) {
+
+    let randomize = false;
+    let x = camera2d.x0();
+    let y = 0;
+    function optionButton(text) {
+      let ret = ui.buttonText({ x, y, z: Z.UI, text });
+      y += ui.button_height + 4;
+      return ret;
+    }
+    if (optionButton('Randomize')) {
+      randomize = true;
+    }
+    if (optionButton(`Ambiance: ${ambiance ? 'ON' : 'OFF'}`)) {
+      ambiance = !ambiance;
+    }
+    if (optionButton(`Endless: ${endless ? 'ON' : 'OFF'}`)) {
+      endless = !endless;
+      initRoboGrid();
+    }
+
+    if (input.click()) {
+      randomize = true;
+    }
+
+    if (randomize) {
+      initRoboGrid();
     }
 
     lightning_countdown -= dt;
@@ -656,6 +721,10 @@ export function main() {
     }
     let time_since_light = engine.global_timer - last_light;
     let cv = max(0, 1 - time_since_light / 250) * 0.2;
+
+    if (!ambiance) {
+      cv = 0.9;
+    }
     gl.clearColor(cv,cv,cv, 1);
 
     clip_space[0] = 2 / engine.viewport[2];
@@ -667,28 +736,40 @@ export function main() {
     camera_space[2] = -camera2d.data[0] * camera2d.data[4] * clip_space[0] - 1;
     camera_space[3] = -camera2d.data[1] * camera2d.data[5] * clip_space[1] + 1;
 
-    for (let jj = 0; jj < ROBO_H; ++jj) {
-      for (let ii = 0; ii < ROBO_W; ++ii) {
-        let robo = robos[jj * ROBO_W + ii];
-        let max_y = tickAndGetMaxY(identity_mat2d, robo);
-        let scale = 0.6;
-        m2translate(mat_base, identity_mat2d, [150 + 300 * ii, 333 + 333 * jj - max_y * scale]);
-        m2scale(mat_base, mat_base, [scale, scale]);
-        drawNode(mat_base, robo);
-        // ui.drawLine(150 + 300 * ii - 30, 300 + 300 * jj, 150 + 300 * ii + 30, 300 + 300 * jj, 1000, 3,0.95,unit_vec);
+    for (let ii = robos.length - 1; ii >= 0; --ii) {
+      let robo = robos[ii];
+      if (endless) {
+        robo.ypos += robo.speed * dt * 0.0001;
+        if (robo.ypos > 1.34) {
+          ridx(robos, ii);
+          let new_robo = genRobo(robo_idx++);
+          new_robo.xpos = robo.xpos;
+          new_robo.ypos = 0;
+          robos.push(new_robo);
+          freeNode(robo);
+          robo = new_robo;
+        }
       }
+      let max_y = tickAndGetMaxY(identity_mat2d, robo);
+      let scale = 0.6;
+      if (endless) {
+        robo.x = camera2d.x0() + (0.1 + 0.8 * robo.xpos) * camera2d.w();
+      } else {
+        robo.x = 150 + 700 * robo.xpos;
+      }
+      robo.y = camera2d.y0() + robo.ypos * camera2d.h();
+      m2translate(mat_base, identity_mat2d, [robo.x, robo.y - max_y * scale]);
+      m2scale(mat_base, mat_base, [scale, scale]);
+      drawNode(mat_base, robo, robo.y);
+      // ui.drawLine(150 + 300 * ii - 30, 300 + 300 * jj, 150 + 300 * ii + 30, 300 + 300 * jj, 1000, 3,0.95,unit_vec);
     }
 
-    sprites.queuefn(1000, doPostEffect);
+    sprites.queuefn(Z.POST, doPostEffect);
   }
 
   function testInit(dt) {
     shaders.addGlobal('camera_space', camera_space);
-    for (let ii = 0; ii < ROBO_W; ++ii) {
-      for (let jj = 0; jj < ROBO_H; ++jj) {
-        robos.push(genRobo(robo_idx++));
-      }
-    }
+    initRoboGrid();
     engine.setState(test);
     test(dt);
   }

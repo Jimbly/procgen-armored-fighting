@@ -18,7 +18,7 @@ const DOWN = 2;
 
 // per-app overrideable options
 const TOUCH_AS_MOUSE = true;
-const MAP_ANALOG_TO_DPAD = true;
+let map_analog_to_dpad = true;
 
 export const ANY = -2;
 export const POINTERLOCK = -1;
@@ -43,6 +43,8 @@ export let KEYS = {
   DOWN: 40,
   INS: 45,
   DEL: 46,
+  NUMPAD_DIVIDE: 111,
+  SLASH: 191,
   TILDE: 192,
 };
 (function () {
@@ -373,9 +375,12 @@ function onBlurOrFocus(evt) {
   }
 }
 
-export function startup(_canvas) {
+export function startup(_canvas, params) {
   canvas = _canvas;
   ptrlock = pointer_lock.create(canvas);
+  if (params.map_analog_to_dpad !== undefined) {
+    map_analog_to_dpad = params.map_analog_to_dpad;
+  }
 
   let passive_param = false;
   try {
@@ -719,7 +724,7 @@ function padButtonUpEdgeInternal(ps, padcode) {
 }
 
 const ANALOG_MAP = (function () {
-  if (!MAP_ANALOG_TO_DPAD) {
+  if (!map_analog_to_dpad) {
     return {};
   }
   let r = {};
