@@ -39,7 +39,7 @@ const DRAW_NODES = false;
 export const game_width = 1000;
 export const game_height = 1000;
 
-const color_black = vec4(0.2,0.2,0.2, 1);
+const color_black = vec4(0.3,0.3,0.3, 1);
 const color_large_laser = vec4(1, 0, 0.5, 1);
 const color_med_laser = vec4(0, 1, 0.5, 1);
 const color_small_laser = vec4(0.8, 1.0, 0.5, 1);
@@ -247,6 +247,9 @@ export function main() {
         weapon_type = rand(NUM_WEAPONS);
         --retries;
       }
+      if (!node2) {
+        return;
+      }
       let other = rand(5);
       if (other < 3) {
         // Use same
@@ -397,54 +400,62 @@ export function main() {
     let shoulder_node_left = new Node();
     m2translate(shoulder_node_left.rel_xform, identity_mat2d, [shoulder_offs, 0]);
     torso_node.children.push(shoulder_node_left, shoulder_node_right);
-    let shoulder_type = rand(4);
-    let shoulder_verts;
     let lrm_y_shrink = 1;
-    if (shoulder_type === 0) {
-      // none
-    } else if (shoulder_type === 1) {
-      // square
-      shoulder_verts = [
-        [shoulder_w / 2, -shoulder_h / 2],
-        [-shoulder_w / 2, -shoulder_h / 2],
-        [-shoulder_w / 2, shoulder_h / 2],
-        [shoulder_w / 2, shoulder_h / 2],
-      ];
-    } else if (shoulder_type === 2) {
-      // pentagonal
-      let cut_h = rand.floatBetween(0, shoulder_w);
-      let cut_v = rand.floatBetween(0, shoulder_h);
-      shoulder_verts = [
-        [shoulder_w / 2, -shoulder_h / 2],
-        [-shoulder_w / 2 + cut_h, -shoulder_h / 2],
-        [-shoulder_w / 2, -shoulder_h / 2 + cut_v],
-        [-shoulder_w / 2, shoulder_h / 2],
-        [shoulder_w / 2, shoulder_h / 2],
-      ];
-      lrm_y_shrink = 1 - max(0, cut_h/shoulder_w - 0.5);
-    } else {
-      // hexagonal
-      let cut_h1 = rand.floatBetween(0, shoulder_w);
-      let cut_h2 = rand.floatBetween(0, shoulder_w);
-      let cut_v = rand.floatBetween(0, shoulder_h * 0.4);
-      shoulder_verts = [
-        [shoulder_w / 2, -shoulder_h / 2],
-        [-shoulder_w / 2 + cut_h1, -shoulder_h / 2],
-        [-shoulder_w / 2, -shoulder_h / 2 + cut_v],
-        [-shoulder_w / 2, shoulder_h / 2 - cut_v],
-        [-shoulder_w / 2 + cut_h2, shoulder_h / 2],
-        [shoulder_w / 2, shoulder_h / 2],
-      ];
-      lrm_y_shrink = 1 - max(0, cut_h1/shoulder_w - 0.5);
+    function genShoulder() {
+      let shoulder_type = rand(4);
+      if (shoulder_type === 0) {
+        // none
+        return null;
+      } else if (shoulder_type === 1) {
+        // square
+        return [
+          [shoulder_w / 2, -shoulder_h / 2],
+          [-shoulder_w / 2, -shoulder_h / 2],
+          [-shoulder_w / 2, shoulder_h / 2],
+          [shoulder_w / 2, shoulder_h / 2],
+        ];
+      } else if (shoulder_type === 2) {
+        // pentagonal
+        let cut_h = rand.floatBetween(0, shoulder_w);
+        let cut_v = rand.floatBetween(0, shoulder_h);
+        lrm_y_shrink = min(lrm_y_shrink, 1 - max(0, cut_h/shoulder_w - 0.5));
+        return [
+          [shoulder_w / 2, -shoulder_h / 2],
+          [-shoulder_w / 2 + cut_h, -shoulder_h / 2],
+          [-shoulder_w / 2, -shoulder_h / 2 + cut_v],
+          [-shoulder_w / 2, shoulder_h / 2],
+          [shoulder_w / 2, shoulder_h / 2],
+        ];
+      } else {
+        // hexagonal
+        let cut_h1 = rand.floatBetween(0, shoulder_w);
+        let cut_h2 = rand.floatBetween(0, shoulder_w);
+        let cut_v = rand.floatBetween(0, shoulder_h * 0.4);
+        lrm_y_shrink = min(lrm_y_shrink, 1 - max(0, cut_h1/shoulder_w - 0.5));
+        return [
+          [shoulder_w / 2, -shoulder_h / 2],
+          [-shoulder_w / 2 + cut_h1, -shoulder_h / 2],
+          [-shoulder_w / 2, -shoulder_h / 2 + cut_v],
+          [-shoulder_w / 2, shoulder_h / 2 - cut_v],
+          [-shoulder_w / 2 + cut_h2, shoulder_h / 2],
+          [shoulder_w / 2, shoulder_h / 2],
+        ];
+      }
     }
+    let shoulder_verts = genShoulder();
     let shoulder_color = color_black; //  hsvToRGB(vec4(0,0,0,1), rand.floatBetween(0, 360), 1, 1);
     if (shoulder_verts) {
       let shoulder = genFanFromBorder(shoulder_verts, 0.5, shoulder_color, 170);
       shoulder_node_right.geom.push(shoulder);
 
-      mirror(shoulder_verts);
-      shoulder = genFanFromBorder(shoulder_verts, 0.5, shoulder_color, 170);
-      shoulder_node_left.geom.push(shoulder);
+      if (rand(9) === 0) {
+        shoulder_verts = genShoulder() || shoulder_verts;
+      }
+      if (shoulder_verts) {
+        mirror(shoulder_verts);
+        shoulder = genFanFromBorder(shoulder_verts, 0.5, shoulder_color, 170);
+        shoulder_node_left.geom.push(shoulder);
+      }
 
       // add weapons
       addWeaponPair(shoulder_node_left, shoulder_node_right, shoulder_w, shoulder_h, 0, lrm_y_shrink, 0, 0);
@@ -663,7 +674,7 @@ export function main() {
   let mat_base = mat2d();
   let last_light = -Infinity;
   let lightning_countdown = 0;
-  let robo_idx = 0;
+  let robo_idx = 6*9;
   let ambiance = true;
   let endless = true;
 
